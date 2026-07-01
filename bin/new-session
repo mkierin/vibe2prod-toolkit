@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# new-session — open a new Windows Terminal tab → WSL → zellij → claude (or codex)
+# with the latest handoff note auto-loaded.
+#
+# Usage:
+#   new-session                       cd into handoff cwd, auto-load HANDOFF.md
+#   new-session NAME                  load HANDOFF-NAME.md (named handoff)
+#   new-session NAME1 NAME2 NAME3     spawn N tabs in parallel, one per named handoff
+#   new-session --3                   spawn 3 fresh tabs in the current dir (no handoff)
+#   new-session --here                cd into current dir, auto-load handoff
+#   new-session --fresh               no handoff; clean session in handoff cwd (or $HOME)
+#   new-session --here --fresh        clean session in current dir
+#   new-session --codex               use OpenAI Codex CLI instead of claude (default)
+#   new-session --claude              explicitly use Claude Code (default)
+#   new-session --model M             claude only: model for the spawned session (e.g. sonnet)
+#   new-session --effort E            claude only: effort level (low|medium|high|max)
+#   new-session --worker              shorthand for --model sonnet --effort max
+#   new-session -h                    help
+
+set -euo pipefail
+
+HANDOFF_DIR="$HOME/.claude/handoff"
+
+# Sweep stale .launch- and .layout- files older than 1 day (exec wipes the trap
+# so launch scripts can litter; safer to clean opportunistically here)
+find "$HANDOFF_DIR" -maxdepth 1 -type f \( -name '.launch-*' -o -name '.layout-*' \) \
+  -mtime +0 -delete 2>/dev/null || true
+
+FRESH=0
+HERE=0
+HERE_EXPLICIT=0
+COUNT=""
+AGENT="claude"
+MODEL=""
+EFFORT=""
+NAMES=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --fresh)  FRESH=1 ;;
+    --here)   HERE=1; HERE_EXPLICIT=1 ;;
+    --[0-9]*)
+      COUNT="${1#--}"
+      case "$COUNT" in
+        ''|*[!0-9]*) echo "new-session: invalid count '$1'" >&2; exit 2 ;;
+      esac ;;
+    --codex)  AGENT="codex" ;;
+    --claude) AGENT="claude" ;;
+    --worker) MODEL="sonnet"; EFFORT="max" ;;
+    --model)
+      [ $# -ge 2 ] || { echo "new-session: --model needs a value" >&2; exit 2; }
+      MODEL="$2"; shift ;;
+    --effort)
+      [ $# -ge 2 ] || { echo "new-session: --effort needs a value" >&2; exit 2; }
+      EFFORT="$2"; shift ;;
+    -h|--help)
+      sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    --*)
+      echo "new-session: unknown flag '$1'" >&2
+      exit 2 ;;
+    *)
+      NAMES+=("$1") ;;
+  esac
+  shift
+done
+
+# --model/--effort are claude flags; codex doesn't accept them
+if [ "$AGENT" != "claude" ] && { [ -n "$MODEL" ] || [ -n "$EFFORT" ]; }; then
+  echo "new-session: --model/--effort only apply to claude; ignoring" >&2
+  MODEL=""; EFFORT=""
+fi
+
+# Verify the chosen agent binary is available
+if ! command -v "$AGENT" >/dev/null 2>&1; then
+  echo "new-session: '$AGENT' binary not found on PATH" >&2
+  exit 1
+fi
+
+# Count mode: spawn N fresh tabs in the current dir (no handoff read).
+# Defaults to --here unless the user explicitly asked otherwise.
+if [ -n "$COUNT" ]; then
+  if [ ${#NAMES[@]} -gt 0 ]; then
+    echo "new-session: --$COUNT cannot be combined with named handoffs" >&2
+    exit 2
+  fi
+  FRESH=1
+  [ "$HERE_EXPLICIT" = "0" ] && HERE=1
+  NAMES=()
+  for ((i=1; i<=COUNT; i++)); do NAMES+=(""); done
+fi
+
+# If no names given, use empty-string sentinel meaning "default HANDOFF.md"
+if [ ${#NAMES[@]} -eq 0 ]; then
+  NAMES=("")
+fi
+
+# Spawn one wt tab for a given handoff name ("" = unnamed = HANDOFF.md)
+spawn_one() {
+  local name="$1"
+  local handoff_file
+  local session_tag_suffix
+
+  if [ -z "$name" ]; then
+    handoff_file="$HANDOFF_DIR/HANDOFF.md"
+    session_tag_suffix=""
+  else
+    handoff_file="$HANDOFF_DIR/HANDOFF-${name}.md"
+    session_tag_suffix="-${name}"
+  fi
+
+  # Resolve target cwd
+  local target_cwd
+  if [ "$HERE" = "1" ]; then
+    target_cwd="$(pwd)"
+  elif [ -f "$handoff_file" ]; then
+    target_cwd="$(grep -m1 '^cwd:' "$handoff_file" | sed 's/^cwd:[[:space:]]*//' || true)"
+    [ -z "$target_cwd" ] && target_cwd="$HOME"
+  else
+    target_cwd="$HOME"
+  fi
+
+  # Verify cwd exists; fall back to $HOME with a warning
+  if [ ! -d "$target_cwd" ]; then
+    echo "new-session: cwd '$target_cwd' missing, falling back to \$HOME" >&2
+    target_cwd="$HOME"
+  fi
+
+  # Pre-trust target_cwd in ~/.claude.json so the "Do you trust this folder?"
+  # dialog never appears. Without this, sessions opened via Claude Remote
+  # can't be accepted (the dialog needs interactive terminal input).
+  python3 - "$target_cwd" <<'PYEOF' || true
+import json, os, sys
+path = sys.argv[1]
+cfg_path = os.path.expanduser("~/.claude.json")
+try:
+    with open(cfg_path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    cfg = {}
+projs = cfg.setdefault("projects", {})
+entry = projs.setdefault(path, {})
+entry.setdefault("allowedTools", [])
+entry["hasTrustDialogAccepted"] = True
+entry.setdefault("hasCompletedProjectOnboarding", True)
+entry.setdefault("hasClaudeMdExternalIncludesApproved", False)
+entry.setdefault("hasClaudeMdExternalIncludesWarningShown", False)
+with open(cfg_path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+PYEOF
+
+  # Decide whether to auto-load handoff
+  local load_handoff=0
+  if [ "$FRESH" = "0" ] && [ -f "$handoff_file" ]; then
+    load_handoff=1
+  fi
+
+  # If user explicitly named a handoff but the file does not exist, warn
+  if [ -n "$name" ] && [ "$FRESH" = "0" ] && [ ! -f "$handoff_file" ]; then
+    echo "new-session: warning, $handoff_file not found — spawning fresh" >&2
+  fi
+
+  # Build initial prompt — auto-continues from handoff by default.
+  # Reads the handoff and acts on the "Next step" section immediately.
+  # Stops only for ambiguity or irreversible actions.
+  local initial_prompt=""
+  if [ "$load_handoff" = "1" ]; then
+    initial_prompt="Read $handoff_file. Acknowledge in one sentence what you're picking up. Then act on the \"Next step\" section immediately, using the listed context, paths, and decisions. Stop to ask only if (a) the next step is genuinely ambiguous, (b) it requires an irreversible action (deploy, push to main/master, delete, send email/message, force-push), or (c) \"Current state\" indicates the work is already done."
+  fi
+
+  # Generate unique session tag + launch/layout files (tag includes agent name)
+  local session_tag="${AGENT}-$(date +%H%M%S)-$$-${RANDOM}${session_tag_suffix}"
+  local launch_script="$HANDOFF_DIR/.launch-${session_tag}.sh"
+  local layout_file="$HANDOFF_DIR/.layout-${session_tag}.kdl"
+
+  # Escape prompt for KDL double-quoted string (escape \ then ")
+  local initial_prompt_kdl
+  initial_prompt_kdl=$(printf '%s' "$initial_prompt" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+
+  # Optional model/effort flags (claude only), as KDL arg strings
+  local extra_args_kdl=""
+  [ -n "$MODEL" ]  && extra_args_kdl+=" \"--model\" \"$MODEL\""
+  [ -n "$EFFORT" ] && extra_args_kdl+=" \"--effort\" \"$EFFORT\""
+
+  # Build the zellij layout
+  if [ "$load_handoff" = "1" ]; then
+    cat > "$layout_file" <<KDLEOF
+layout {
+    pane command="$AGENT" {
+        args${extra_args_kdl} "$initial_prompt_kdl"
+    }
+}
+KDLEOF
+  elif [ -n "$extra_args_kdl" ]; then
+    cat > "$layout_file" <<KDLEOF
+layout {
+    pane command="$AGENT" {
+        args${extra_args_kdl}
+    }
+}
+KDLEOF
+  else
+    cat > "$layout_file" <<KDLEOF
+layout {
+    pane command="$AGENT"
+}
+KDLEOF
+  fi
+
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -e'
+    # The new tab runs `bash -lc` — a login + NON-interactive shell. It sources
+    # ~/.profile (so ~/.local/bin lands on PATH, giving us zellij + the agent),
+    # but it does NOT source ~/.bashrc, where nvm lives. So `node` is missing and
+    # the node-based claude/codex CLI dies with exit 127. Bake the full PATH from
+    # the (already-working) invoking environment so node, the agent, and zellij
+    # all resolve regardless of login-shell quirks. This runs after the profile,
+    # so it wins.
+    printf 'export PATH=%q\n' "$PATH"
+    # Belt-and-suspenders for invocations from a context with an incomplete PATH
+    # (e.g. PowerShell `wsl new-session`, cron) where the baked PATH above might
+    # also lack node. These dirs are fixed locations independent of the caller's
+    # PATH: ~/.local/bin holds claude/codex/zellij, nvm holds node.
+    echo 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"'
+    echo 'if ! command -v node >/dev/null 2>&1; then for d in "$HOME"/.nvm/versions/node/*/bin; do [ -d "$d" ] && { export PATH="$d:$PATH"; break; }; done; fi'
+    printf 'cd %q\n' "$target_cwd"
+    # Cleanup on exit (does not fire after `exec`, but caught if zellij errors before exec)
+    printf 'trap %q EXIT\n' "rm -f $(printf %q "$launch_script") $(printf %q "$layout_file")"
+    # zellij 0.43: `-s NAME --layout FILE` treats NAME as attach-target.
+    # Use `--layout FILE` alone; zellij auto-names the new session.
+    printf 'exec zellij --layout %q\n' "$layout_file"
+  } > "$launch_script"
+
+  chmod +x "$launch_script"
+
+  # If launched from inside Windows Terminal (WT_SESSION set), reuse the
+  # current wt window. Otherwise let wt pick — either the most-recently-used
+  # window or a new one. `-w 0` only works from inside wt.
+  #
+  # Run wt.exe in the FOREGROUND (no `&`). `wt nt` dispatches to the Windows
+  # Terminal server and returns immediately, so this doesn't block. Backgrounding
+  # broke the wrapper path (PowerShell `wsl new-session`): the wrapper's short-
+  # lived `bash -lc` exits the instant new-session returns, killing the orphaned
+  # `wt.exe &` job before it dispatches. Foreground guarantees dispatch completes.
+  if [ -n "${WT_SESSION:-}" ]; then
+    "$WT_BIN" -w 0 nt --title "$session_tag" wsl.exe -- bash -lc "$launch_script" >/dev/null 2>&1
+  else
+    "$WT_BIN" nt --title "$session_tag" wsl.exe -- bash -lc "$launch_script" >/dev/null 2>&1
+  fi
+
+  echo "→ new tab: $session_tag"
+  echo "  agent: $AGENT${MODEL:+ (model: $MODEL${EFFORT:+, effort: $EFFORT})}${MODEL:+}"
+  [ -z "$MODEL" ] && [ -n "$EFFORT" ] && echo "  effort: $EFFORT"
+  echo "  cwd: $target_cwd"
+  if [ "$load_handoff" = "1" ]; then
+    echo "  handoff: $handoff_file"
+  else
+    echo "  fresh (no handoff)"
+  fi
+}
+
+# Locate wt.exe — prefer PATH, else derive the per-user WindowsApps path.
+WT_BIN="$(command -v wt.exe || true)"
+if [ -z "$WT_BIN" ]; then
+  win_user="$(cmd.exe /c 'echo %USERNAME%' 2>/dev/null | tr -d '\r\n')"
+  [ -n "$win_user" ] && WT_BIN="/mnt/c/Users/$win_user/AppData/Local/Microsoft/WindowsApps/wt.exe"
+fi
+
+if [ ! -x "$WT_BIN" ] && [ ! -f "$WT_BIN" ]; then
+  echo "new-session: wt.exe not found on PATH" >&2
+  exit 1
+fi
+
+# Spawn each requested tab
+for name in "${NAMES[@]}"; do
+  spawn_one "$name"
+done
