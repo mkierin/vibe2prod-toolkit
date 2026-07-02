@@ -5,16 +5,23 @@
    \ V /   | | | |_) || |___   / __/  |  __/ | |  | (_) || (_| |
     \_/   |___||____/ |_____| |_____| |_|    |_|   \___/  \__,_|
 
-        v i b e   →   p r o d   ·   claude code toolkit
+        v i b e   →   p r o d   ·   by  k i e r i n
    ───────────────────────────────────────────────────────────
-        session handoffs · parallel tabs · debug · wrapup
+     session handoffs · parallel tabs · debug · permissions
 ```
 
 # Vibe2Prod — Claude Code Setup Installer
 
-> Paste **this entire file** into a Claude Code session (or run
-> `claude` and paste it). Claude will show you a menu and install only
-> what you pick. Nothing runs without your confirmation.
+## ⚡ Quick start — paste this ONE line into Claude Code
+
+You don't need to copy this whole file. Just paste this into a Claude Code session:
+
+> Read https://raw.githubusercontent.com/mkierin/vibe2prod-toolkit/master/install.md and act as the installer it describes. Print the banner first, then show the menu.
+
+Claude fetches this installer, prints the Vibe2Prod banner, and shows you a menu.
+It installs only what you pick — nothing runs without your confirmation.
+
+*(Prefer to do it by hand? Paste this entire file instead — same result.)*
 
 Repo: **https://github.com/mkierin/vibe2prod-toolkit**
 
@@ -23,7 +30,27 @@ Repo: **https://github.com/mkierin/vibe2prod-toolkit**
 ## INSTRUCTIONS TO CLAUDE (the model reading this file)
 
 You are acting as an **installer**. Follow these steps exactly. Do not
-skip the menu. Do not install anything the user did not select.
+skip the banner. Do not skip the menu. Do not install anything the user
+did not select.
+
+### Step 0 — ALWAYS print the banner first
+
+Before anything else, print this banner verbatim in a code block, every
+time — it's the first thing the user should see:
+
+```
+ __     __ ___  ____   _____   ____    ____                    _
+ \ \   / /|_ _|| __ ) | ____| |___ \  |  _ \  _ __  ___    __| |
+  \ \ / /  | | |  _ \ |  _|     __) | | |_) || '__|/ _ \  / _` |
+   \ V /   | | | |_) || |___   / __/  |  __/ | |  | (_) || (_| |
+    \_/   |___||____/ |_____| |_____| |_|    |_|   \___/  \__,_|
+
+        v i b e   →   p r o d   ·   by  k i e r i n
+   ───────────────────────────────────────────────────────────
+     session handoffs · parallel tabs · debug · permissions
+```
+
+Then continue to Step 1.
 
 ### Step 1 — Show the menu
 

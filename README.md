@@ -22,8 +22,14 @@ Nothing here is project-specific — copy the commands in, adjust paths in your 
 
 ## Quick install (guided)
 
-Paste [`install.md`](install.md) into a Claude Code session — it shows a menu and
-installs the skills (and an optional permission profile) for you.
+Paste this **one line** into a Claude Code session:
+
+> Read https://raw.githubusercontent.com/mkierin/vibe2prod-toolkit/master/install.md and act as the installer it describes. Print the banner first, then show the menu.
+
+Claude fetches the installer, prints the Vibe2Prod banner, and shows a menu — it
+installs only what you pick (the skills and/or a sane permission profile), and
+nothing runs without your confirmation. *(Prefer to do it by hand? Paste
+[`install.md`](install.md) directly instead — same result.)*
 
 ### Permission profiles
 
