@@ -25,6 +25,21 @@ Nothing here is project-specific — copy the commands in, adjust paths in your 
 Paste [`install.md`](install.md) into a Claude Code session — it shows a menu and
 installs the skills (and an optional permission profile) for you.
 
+### Permission profiles
+
+The installer can also set up a permission profile in `~/.claude/settings.json`:
+
+- **Balanced (recommended)** — the three-list model: `allow` safe repetitive
+  commands (builds, tests, read-only git), `ask` before destructive/outbound
+  ones (`git push`, `rm`, publish), `deny` secrets outright (`.env`, `~/.ssh`).
+  Fewest prompts without going blind. `deny` always wins over `allow`/`ask`.
+- **Trusting** — `Bash(*)` + core tools. Fastest, but removes bash from safety
+  checks entirely — sandbox/VM only.
+- **Curated** — a hand-picked allowlist, no `ask`/`deny` layer.
+
+It never writes secrets, warns if your existing file has a `Bash(*)` rule or a
+leaked API key, and merges rather than clobbering your current settings.
+
 ## Manual install
 
 ```bash

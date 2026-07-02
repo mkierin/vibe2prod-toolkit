@@ -107,15 +107,62 @@ The goal is to give the user a working permission allowlist in
 
 2. Ask which **profile** they want (use `AskUserQuestion`, single-select):
 
+   - **Balanced (recommended)** — the three-list model: `allow` the safe,
+     repetitive stuff (builds, tests, read-only git), `ask` before anything
+     destructive or outbound (`git push`, `rm`, publish), and `deny` secrets
+     outright (`.env`, `~/.ssh`). Fewest prompts *without* going blind. Also
+     sets `defaultMode: "acceptEdits"` so file edits don't nag. Best default
+     for almost everyone.
    - **Trusting** — broad access, fewest prompts. Adds `Bash(*)`,
-     `WebFetch`, `WebSearch`, and the core file tools. Best for a solo
-     dev on their own machine who trusts their own commands.
+     `WebFetch`, `WebSearch`, and the core file tools. Fastest, but `Bash(*)`
+     removes bash from safety-checking entirely — only for a solo dev on a
+     machine they fully trust (ideally a sandbox/VM).
    - **Curated** — explicit allowlist of common safe commands, still
-     prompts for anything unusual. Best if you want a tighter setup.
+     prompts for anything unusual. Tighter than Trusting, but has no `ask`
+     or `deny` layer — prefer Balanced unless you want to hand-pick.
 
-3. Merge the chosen block into `permissions.allow` (dedupe against what's
-   already there) and set the env var. Write the file. Then print what
-   changed.
+3. Merge the chosen block into the matching `permissions` lists (`allow`,
+   `ask`, `deny` — dedupe each against what's already there), set the env var
+   and `defaultMode`, then write the file and print what changed.
+
+> **Note — `deny` always wins.** Rules are evaluated deny → ask → allow, so
+> a `deny` entry silently overrides any `allow`/`ask` that matches the same
+> thing. That's the point: it makes secrets unreadable no matter what else
+> is allowed. Reads/grep/find are already free by default — don't allowlist
+> them, only list what would otherwise prompt.
+
+**Balanced profile (recommended)** — merge `allow`/`ask`/`deny` and set
+`defaultMode`:
+
+```json
+{
+  "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
+  "defaultMode": "acceptEdits",
+  "permissions": {
+    "allow": [
+      "Read", "Glob", "Grep", "Edit", "Write",
+      "WebFetch", "WebSearch",
+      "Bash(npm run build)", "Bash(npm run test:*)", "Bash(npm run lint:*)",
+      "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)",
+      "Bash(git add:*)", "Bash(git commit:*)",
+      "Bash(ls:*)", "Bash(cat:*)", "Bash(find:*)", "Bash(mkdir:*)",
+      "Bash(mv:*)", "Bash(cp:*)", "Bash(test:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)", "Bash(rm:*)", "Bash(npm publish:*)",
+      "Bash(git reset --hard:*)", "Bash(docker:*)"
+    ],
+    "deny": [
+      "Read(.env)", "Read(./.env.*)", "Read(**/.env)",
+      "Read(~/.ssh/**)", "Read(~/.aws/**)",
+      "Read(**/*secret*)", "Read(**/*credentials*)"
+    ]
+  }
+}
+```
+
+> Never allowlist `Bash(*)` alongside these — it re-opens everything the
+> `ask`/`deny` lists are meant to gate.
 
 **Trusting profile** — merge these into `permissions.allow`:
 
@@ -161,11 +208,19 @@ The goal is to give the user a working permission allowlist in
 
 **Rules for Claude when writing settings:**
 - Merge, do not overwrite. Preserve every entry already in the user's file.
-- Deduplicate the `allow` array.
+- Deduplicate each of the `allow`, `ask`, and `deny` arrays.
+- For Balanced: if the user's existing `allow` already contains `Bash(*)`,
+  **warn them** — it defeats the `ask`/`deny` gates — and offer to remove it.
 - **Never** add any entry that contains an API key, token, password, or a
   machine-specific absolute path. If the user's existing file contains such
-  entries, leave them untouched but do **not** echo their values back.
-- Show the user the final `permissions.allow` list and confirm before saving.
+  entries (e.g. a `Bash(...API_KEY=...)` allow rule), **flag it as a leaked
+  secret**, offer to strip it, tell them to rotate the key, and do **not**
+  echo its value back.
+- Show the user the final `permissions` block and confirm before saving.
+- **Optional — mention Auto Mode:** on Max/Team/Enterprise you can also set
+  `"defaultMode": "auto"`, which uses a classifier to auto-approve low-risk
+  actions instead of prefix rules — the safe middle ground between manual
+  approval and `bypassPermissions`.
 
 ---
 
