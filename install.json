@@ -1,0 +1,23 @@
+{
+  "id": "core-session",
+  "name": "vibe2prod core session commands",
+  "description": "The session-continuity slash commands. Pure commands, no hooks. The optional launcher (bin/) auto-spawns a new terminal tab and is WSL + Windows Terminal + zellij specific — the commands work without it.",
+  "commands": [
+    "commands/handoff.md",
+    "commands/handoff-many.md",
+    "commands/wrapup.md",
+    "commands/pickup.md",
+    "commands/new-session.md",
+    "commands/debug.md",
+    "commands/postmortem.md",
+    "commands/fix-skill.md"
+  ],
+  "bin": {
+    "optional": true,
+    "note": "Only for auto-spawning a fresh tab from /handoff, /handoff-many, /new-session. Needs WSL + Windows Terminal + zellij. Skip it on any other stack — the commands fall back to just printing the handoff path.",
+    "files": [
+      { "src": "bin/new-session", "dest": "~/.local/bin/new-session" },
+      { "src": "bin/team-status.sh", "dest": "~/.local/bin/team-status.sh" }
+    ]
+  }
+}

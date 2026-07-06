@@ -1,0 +1,21 @@
+{
+  "name": "vibe2prod toolkit",
+  "description": "Index of standalone Claude Code tools. Each entry points at a repo that carries its own install.json describing what to install (commands, hooks, launchers). The installer reads this manifest, then installs only the tools the user picks. Add a new tool = add one entry here; nothing else changes.",
+  "channel": "https://www.youtube.com/channel/UCm8MSB6z3D4ViAuJc1qvzTw",
+  "tools": [
+    {
+      "id": "reality-check",
+      "repo": "https://github.com/mkierin/reality-check",
+      "branch": "master",
+      "install": "install.json",
+      "desc": "Definition-of-Done gate — prove a change works with real data before you claim done or deploy. Ships a deploy-blocking hook + an advisory 'you claimed done with no proof' nudge."
+    },
+    {
+      "id": "core-session",
+      "repo": "https://github.com/mkierin/vibe2prod-toolkit",
+      "branch": "master",
+      "install": "install.json",
+      "desc": "Session-continuity command set: /handoff, /handoff-many, /wrapup, /pickup, /new-session, /debug, /postmortem, /fix-skill. Bundled here for now; being split into their own repos over time."
+    }
+  ]
+}

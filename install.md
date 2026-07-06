@@ -7,159 +7,153 @@
 
         v i b e   →   p r o d   ·   by  k i e r i n
    ───────────────────────────────────────────────────────────
-     session handoffs · parallel tabs · debug · permissions
+     session handoffs · reality-check · debug · permissions
 ```
 
 # Vibe2Prod — Claude Code Setup Installer
 
 ## ⚡ Quick start — paste this ONE line into Claude Code
 
-You don't need to copy this whole file. Just paste this into a Claude Code session:
-
 > Read https://raw.githubusercontent.com/mkierin/vibe2prod-toolkit/master/install.md and act as the installer it describes. Print the banner first, then show the menu.
 
-Claude fetches this installer, prints the Vibe2Prod banner, and shows you a menu.
-It installs only what you pick — nothing runs without your confirmation.
-
-*(Prefer to do it by hand? Paste this entire file instead — same result.)*
+Claude fetches this installer, prints the banner, reads the tool **index**, and
+shows you a menu. It installs only what you pick — nothing runs without your
+confirmation.
 
 Repo: **https://github.com/mkierin/vibe2prod-toolkit**
 
 ---
 
+## HOW THIS INSTALLER WORKS (read this, it changes what you do)
+
+This toolkit is an **index**, not a bundle. It does not ship copies of the
+tools. It ships a `manifest.json` that lists each tool and the **GitHub repo**
+it lives in. Each tool repo carries its own `install.json` describing exactly
+what to install (commands, hooks, launchers). Your job as the installer is:
+
+> read the manifest → let the user pick tools → for each pick, clone its repo,
+> read its `install.json`, and install what it declares.
+
+Adding a tool later means one new line in `manifest.json` — this installer
+picks it up automatically. Never hard-code the tool list below; always read it
+live from the manifest.
+
+---
+
 ## INSTRUCTIONS TO CLAUDE (the model reading this file)
 
-You are acting as an **installer**. Follow these steps exactly. Do not
-skip the banner. Do not skip the menu. Do not install anything the user
-did not select.
+You are acting as an **installer**. Follow these steps exactly. Do not skip the
+banner. Do not skip the menu. Do not install anything the user did not select.
+Never overwrite an existing file blindly — on any collision, show it and ask.
 
 ### Step 0 — ALWAYS print the banner first
 
-Before anything else, print this banner verbatim in a code block, every
-time — it's the first thing the user should see:
+Print the banner at the top of this file verbatim in a code block, every time.
+Then continue.
 
-```
- __     __ ___  ____   _____   ____    ____                    _
- \ \   / /|_ _|| __ ) | ____| |___ \  |  _ \  _ __  ___    __| |
-  \ \ / /  | | |  _ \ |  _|     __) | | |_) || '__|/ _ \  / _` |
-   \ V /   | | | |_) || |___   / __/  |  __/ | |  | (_) || (_| |
-    \_/   |___||____/ |_____| |_____| |_|    |_|   \___/  \__,_|
+### Step 1 — Read the tool index
 
-        v i b e   →   p r o d   ·   by  k i e r i n
-   ───────────────────────────────────────────────────────────
-     session handoffs · parallel tabs · debug · permissions
-```
-
-Then continue to Step 1.
-
-### Step 1 — Show the menu
-
-Use your `AskUserQuestion` tool (multi-select) to ask **"What do you want
-to install?"** with these options:
-
-1. **Skills** — the Vibe2Prod session-workflow command skills
-2. **Permission settings** — a sane Claude Code permission allowlist
-3. **Both**
-
-Wait for the answer before doing anything.
-
----
-
-### Step 2 — If the user chose Skills
-
-The skills live in a GitHub repo. Install them like this:
+Fetch the manifest:
 
 ```bash
-# 1. The repo
-REPO_URL="https://github.com/mkierin/vibe2prod-toolkit.git"
+curl -fsSL https://raw.githubusercontent.com/mkierin/vibe2prod-toolkit/master/manifest.json
+```
 
-# 2. Clone to a temp dir
+Parse the `tools` array. Each entry has: `id`, `repo`, `branch`, `install`
+(path to its install.json inside the repo), and `desc`.
+
+### Step 2 — Show the menu
+
+Use your `AskUserQuestion` tool (multi-select) to ask **"What do you want to
+install?"**. Build the options **dynamically from the manifest** — one option
+per tool, using its `id` as the label and `desc` as the description. Add one
+more option at the end:
+
+- **Permission settings** — a sane Claude Code permission allowlist (see Step 4)
+
+Wait for the answer. Only act on what they picked.
+
+### Step 3 — Install each selected tool
+
+For every tool the user selected, do this (loop):
+
+```bash
+# Given TOOL_REPO, TOOL_BRANCH, TOOL_INSTALL from the manifest entry:
 TMP="$(mktemp -d)"
-git clone --depth 1 "$REPO_URL" "$TMP"
-
-# 3. Copy the command skills into the user's Claude commands dir
-mkdir -p ~/.claude/commands
-cp "$TMP"/commands/*.md ~/.claude/commands/
-
-# 4. List what was installed
-ls ~/.claude/commands/
+git clone --depth 1 --branch "$TOOL_BRANCH" "$TOOL_REPO" "$TMP"
+cat "$TMP/$TOOL_INSTALL"   # <- read this tool's install.json
 ```
 
-(Keep `$TMP` until after the optional launcher step below, then
-`rm -rf "$TMP"` to clean up.)
+Then honor the tool's `install.json`, which has these optional sections:
 
-**Optional launcher (`bin/`):** the repo also ships a `new-session` launcher +
-`team-status.sh` that let `/handoff` auto-spawn a fresh tab. It needs **WSL +
-Windows Terminal + zellij** and is optional — the skills write handoff notes
-fine without it. Ask the user if they want it; only if yes:
+1. **`commands`** — a list of file paths inside the repo. Copy each into
+   `~/.claude/commands/`:
+   ```bash
+   mkdir -p ~/.claude/commands
+   cp "$TMP"/<each commands path> ~/.claude/commands/
+   ```
+   Before copying, check for name collisions in `~/.claude/commands/`. If any
+   exist, list them and ask: overwrite, skip, or back up first.
 
-```bash
-mkdir -p ~/.local/bin
-cp "$TMP"/bin/new-session "$TMP"/bin/team-status.sh ~/.local/bin/ 2>/dev/null
-chmod +x ~/.local/bin/new-session ~/.local/bin/team-status.sh
-# ensure ~/.local/bin is on PATH (add to ~/.profile if missing)
+2. **`hooks`** — has `files` (copy into `~/.claude/hooks/`, then `chmod +x`)
+   and `settings` (a list of hook entries to wire into
+   `~/.claude/settings.json`). **Copy the files now; collect the `settings`
+   entries and apply them all together in Step 3b.**
+   ```bash
+   mkdir -p ~/.claude/hooks
+   cp "$TMP"/<each hooks.files path> ~/.claude/hooks/
+   chmod +x ~/.claude/hooks/*.py 2>/dev/null || true
+   ```
+
+3. **`bin`** — optional launchers. If present and `optional` is true, ASK the
+   user first (tell them the `note` — usually WSL + Windows Terminal + zellij
+   only). Only if yes, copy each `files[].src` to its `files[].dest` (expand
+   `~`), `mkdir -p` the dest dir, and `chmod +x`. If they say no, skip — the
+   tool still works.
+
+Then `rm -rf "$TMP"`.
+
+### Step 3b — Wire hook settings (only if any tool declared `hooks.settings`)
+
+Collect every `settings` entry from every installed tool, then merge them into
+`~/.claude/settings.json` under `hooks`. Each entry looks like:
+
+```json
+{ "event": "PreToolUse", "matcher": "Bash",
+  "command": "python3 ~/.claude/hooks/reality-check-gate.py" }
 ```
 
-Notes for Claude:
-- The repo is public — no auth needed to clone.
-- **Never overwrite blindly.** Before copying, check whether any target
-  filenames already exist in `~/.claude/commands/`. If they do, list the
-  collisions and ask the user whether to overwrite, skip, or back up first.
-- After copying, tell the user the skills are available as slash commands
-  (e.g. `/handoff`, `/wrapup`, `/pickup`).
+Merge rules:
+- **Back up first**: copy `~/.claude/settings.json` to
+  `~/.claude/settings.json.bak` before writing.
+- Under `settings.json` → `hooks` → `<event>` (e.g. `PreToolUse`, `Stop`),
+  append a hook group `{ "matcher": <matcher, if any>, "hooks": [ { "type":
+  "command", "command": <command> } ] }`.
+- **Never clobber.** Preserve every existing hook. **Dedupe**: if a hook with
+  the same `command` is already present for that event, skip it.
+- Show the user the resulting `hooks` block and confirm before writing.
+- Tell them hooks take effect on the next Claude Code start.
 
-**The Vibe2Prod skills (what the user is getting):**
+### Step 4 — Permission settings (only if the user chose it)
 
-| Command | What it does |
-|---|---|
-| `/handoff` | Write a session handoff note so the next session resumes the right thread |
-| `/handoff-many` | Split the session into N parallel handoff notes + spawn a tab per task |
-| `/wrapup` | End-of-session close-out: update tasks, commit, write handoff, print a receipt |
-| `/pickup` | Morning restore — read the handoff + project state, recommend a first action |
-| `/new-session` | Open a fresh Claude session in a new terminal tab |
-| `/debug` | Reproduce → isolate layer → 3 hypotheses → fix → regression test. Never skips steps |
-| `/postmortem` | Root-cause an incident, then turn each cause into a durable automated check |
-| `/fix-skill` | Repair or improve an existing skill after it misfires |
+Give the user a working permission allowlist in `~/.claude/settings.json`
+without pasting any secrets.
 
----
+1. Read the existing `~/.claude/settings.json` if present — you will **merge**,
+   never clobber. Show the diff before writing.
 
-### Step 3 — If the user chose Permission settings
+2. Ask which **profile** (use `AskUserQuestion`, single-select):
 
-The goal is to give the user a working permission allowlist in
-`~/.claude/settings.json` **without pasting any secrets**. Do this:
+   - **Balanced (recommended)** — three-list model: `allow` safe repetitive
+     commands (builds, tests, read-only git), `ask` before destructive/outbound
+     ones (`git push`, `rm`, publish), `deny` secrets outright (`.env`,
+     `~/.ssh`). Fewest prompts without going blind. Sets `defaultMode:
+     "acceptEdits"`.
+   - **Trusting** — `Bash(*)` + core tools. Fastest, but removes bash from
+     safety checks entirely — sandbox/VM only.
+   - **Curated** — a hand-picked allowlist, no `ask`/`deny` layer.
 
-1. Read the user's existing `~/.claude/settings.json` if it exists. If it
-   does, you will **merge** — never clobber their current file. Show them
-   the diff before writing.
-
-2. Ask which **profile** they want (use `AskUserQuestion`, single-select):
-
-   - **Balanced (recommended)** — the three-list model: `allow` the safe,
-     repetitive stuff (builds, tests, read-only git), `ask` before anything
-     destructive or outbound (`git push`, `rm`, publish), and `deny` secrets
-     outright (`.env`, `~/.ssh`). Fewest prompts *without* going blind. Also
-     sets `defaultMode: "acceptEdits"` so file edits don't nag. Best default
-     for almost everyone.
-   - **Trusting** — broad access, fewest prompts. Adds `Bash(*)`,
-     `WebFetch`, `WebSearch`, and the core file tools. Fastest, but `Bash(*)`
-     removes bash from safety-checking entirely — only for a solo dev on a
-     machine they fully trust (ideally a sandbox/VM).
-   - **Curated** — explicit allowlist of common safe commands, still
-     prompts for anything unusual. Tighter than Trusting, but has no `ask`
-     or `deny` layer — prefer Balanced unless you want to hand-pick.
-
-3. Merge the chosen block into the matching `permissions` lists (`allow`,
-   `ask`, `deny` — dedupe each against what's already there), set the env var
-   and `defaultMode`, then write the file and print what changed.
-
-> **Note — `deny` always wins.** Rules are evaluated deny → ask → allow, so
-> a `deny` entry silently overrides any `allow`/`ask` that matches the same
-> thing. That's the point: it makes secrets unreadable no matter what else
-> is allowed. Reads/grep/find are already free by default — don't allowlist
-> them, only list what would otherwise prompt.
-
-**Balanced profile (recommended)** — merge `allow`/`ask`/`deny` and set
-`defaultMode`:
+**Balanced profile (recommended):**
 
 ```json
 {
@@ -188,33 +182,26 @@ The goal is to give the user a working permission allowlist in
 }
 ```
 
-> Never allowlist `Bash(*)` alongside these — it re-opens everything the
-> `ask`/`deny` lists are meant to gate.
+> **`deny` always wins** — rules evaluate deny → ask → allow. Reads/grep/find
+> are free by default; only list what would otherwise prompt.
 
-**Trusting profile** — merge these into `permissions.allow`:
+**Trusting profile** — merge into `permissions.allow`:
 
 ```json
 {
   "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
-  "permissions": {
-    "allow": [
-      "Read", "Glob", "Grep", "Edit", "Write",
-      "WebFetch", "WebSearch",
-      "Bash(*)"
-    ]
-  }
+  "permissions": { "allow": [ "Read", "Glob", "Grep", "Edit", "Write", "WebFetch", "WebSearch", "Bash(*)" ] }
 }
 ```
 
-**Curated profile** — merge these into `permissions.allow` instead:
+**Curated profile** — merge into `permissions.allow`:
 
 ```json
 {
   "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" },
   "permissions": {
     "allow": [
-      "Read", "Glob", "Grep", "Edit", "Write",
-      "WebFetch", "WebSearch",
+      "Read", "Glob", "Grep", "Edit", "Write", "WebFetch", "WebSearch",
       "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(find:*)",
       "Bash(mkdir:*)", "Bash(mv:*)", "Bash(cp:*)", "Bash(test:*)",
       "Bash(chmod:*)", "Bash(wc:*)", "Bash(sort:*)", "Bash(tree:*)",
@@ -226,34 +213,25 @@ The goal is to give the user a working permission allowlist in
       "Bash(git init:*)", "Bash(git reset:*)",
       "Bash(docker exec:*)", "Bash(docker logs:*)",
       "Bash(docker-compose up:*)", "Bash(docker-compose down:*)",
-      "Bash(docker-compose logs:*)",
-      "Bash(tmux:*)"
+      "Bash(docker-compose logs:*)", "Bash(tmux:*)"
     ]
   }
 }
 ```
 
-**Rules for Claude when writing settings:**
-- Merge, do not overwrite. Preserve every entry already in the user's file.
-- Deduplicate each of the `allow`, `ask`, and `deny` arrays.
-- For Balanced: if the user's existing `allow` already contains `Bash(*)`,
-  **warn them** — it defeats the `ask`/`deny` gates — and offer to remove it.
-- **Never** add any entry that contains an API key, token, password, or a
-  machine-specific absolute path. If the user's existing file contains such
-  entries (e.g. a `Bash(...API_KEY=...)` allow rule), **flag it as a leaked
-  secret**, offer to strip it, tell them to rotate the key, and do **not**
-  echo its value back.
-- Show the user the final `permissions` block and confirm before saving.
-- **Optional — mention Auto Mode:** on Max/Team/Enterprise you can also set
-  `"defaultMode": "auto"`, which uses a classifier to auto-approve low-risk
-  actions instead of prefix rules — the safe middle ground between manual
-  approval and `bypassPermissions`.
+**Rules for writing settings:**
+- Merge, do not overwrite. Preserve every existing entry. Dedupe each array.
+- For Balanced: if the existing `allow` has `Bash(*)`, **warn** — it defeats
+  the `ask`/`deny` gates — and offer to remove it.
+- **Never** add any entry containing an API key, token, password, or a
+  machine-specific absolute path. If the existing file has such an entry, flag
+  it as a leaked secret, offer to strip it, tell them to rotate the key, and do
+  **not** echo its value.
+- Show the final `permissions` block and confirm before saving.
 
----
+### Step 5 — Finish
 
-### Step 4 — Finish
-
-Print a short summary of what was installed (skills copied, permission
-profile applied) and remind the user they can start using the slash
-commands immediately. If the user restarts Claude Code, the new
-permissions take effect for the whole session.
+Print a short summary: which tools were installed (commands + hooks), whether
+launchers/permissions were applied, and remind the user that slash commands are
+available immediately, while new hooks/permissions take effect on the next
+Claude Code start.
