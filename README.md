@@ -11,6 +11,8 @@ This repo doesn't bundle the tools. It holds a [`manifest.json`](manifest.json) 
 | Tool | Repo | What it does |
 |------|------|--------------|
 | **reality-check** | [mkierin/reality-check](https://github.com/mkierin/reality-check) | Definition-of-Done gate — prove a change works with real data before you claim done or deploy. Ships a deploy-blocking hook + an advisory "you claimed done with no proof" nudge. |
+| **spec2prod** | [mkierin/spec2prod](https://github.com/mkierin/spec2prod) | Turn a build session into a runnable SPEC.md a cold agent can one-shot — /spec-capture + /spec-distill + session-index skills. |
+| **animated-diagram** | [mkierin/animated-diagram](https://github.com/mkierin/animated-diagram) | Turn a static infographic into an animated, interactive 16:9 page for your videos — one prompt; ships a presenter-stepped deck assembler. |
 | **core session commands** | *(in this repo, being split out)* | `/handoff`, `/handoff-many`, `/wrapup`, `/pickup`, `/new-session`, `/debug`, `/postmortem`, `/fix-skill` — session-continuity + general workflow commands. |
 
 More tools get added as single lines in `manifest.json`; the installer picks them up automatically.
@@ -41,6 +43,7 @@ git clone https://github.com/mkierin/reality-check.git
   - `commands` — `.md` files copied into `~/.claude/commands/`
   - `hooks` — `files` copied into `~/.claude/hooks/`, plus `settings` entries merged into `~/.claude/settings.json`
   - `bin` — optional launcher scripts (asked about, never forced)
+  - `skills` — folders copied into `~/.claude/skills/` (each entry has `src` + `dest`; Claude Code discovers `SKILL.md` automatically)
 - **`install.md`** — the installer instructions the model follows. It reads the manifest, never a hard-coded list, so it never goes stale.
 
 This is deliberately a migration in progress: the "core session commands" still live in this repo for now and get installed as one bundle. As each is split into its own repo, it moves from that bundle to its own `manifest.json` line — no installer changes needed.

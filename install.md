@@ -105,7 +105,17 @@ Then honor the tool's `install.json`, which has these optional sections:
    chmod +x ~/.claude/hooks/*.py 2>/dev/null || true
    ```
 
-3. **`bin`** — optional launchers. If present and `optional` is true, ASK the
+3. **`skills`** — a list of `{src, dest}` folder copies. Copy the whole
+   `src` folder from the repo to `dest` (expand `~`), e.g.:
+   ```bash
+   mkdir -p ~/.claude/skills
+   cp -r "$TMP/<src>" <dest>
+   ```
+   No settings.json changes needed — Claude Code discovers `SKILL.md`
+   automatically. Check for an existing folder at `dest` first; if present,
+   ask: overwrite, skip, or back up.
+
+4. **`bin`** — optional launchers. If present and `optional` is true, ASK the
    user first (tell them the `note` — usually WSL + Windows Terminal + zellij
    only). Only if yes, copy each `files[].src` to its `files[].dest` (expand
    `~`), `mkdir -p` the dest dir, and `chmod +x`. If they say no, skip — the

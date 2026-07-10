@@ -11,6 +11,20 @@
       "desc": "Definition-of-Done gate — prove a change works with real data before you claim done or deploy. Ships a deploy-blocking hook + an advisory 'you claimed done with no proof' nudge."
     },
     {
+      "id": "spec2prod",
+      "repo": "https://github.com/mkierin/spec2prod",
+      "branch": "master",
+      "install": "install.json",
+      "desc": "Turn a build session into a runnable SPEC.md a cold agent can one-shot. /spec-capture + /spec-distill + session-index skills."
+    },
+    {
+      "id": "animated-diagram",
+      "repo": "https://github.com/mkierin/animated-diagram",
+      "branch": "master",
+      "install": "install.json",
+      "desc": "Turn a static infographic into an animated, interactive 16:9 page for your videos — the diagram's argument becomes the animation. Skill + template + 5 examples + presenter-stepped deck."
+    },
+    {
       "id": "core-session",
       "repo": "https://github.com/mkierin/vibe2prod-toolkit",
       "branch": "master",
